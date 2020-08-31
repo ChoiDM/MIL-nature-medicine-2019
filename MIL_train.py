@@ -187,7 +187,7 @@ class MILdataset(data.Dataset):
 
         self.size = args.input_size
 
-    def get_slide_name_from_path(self, path):
+    def get_slide_idx_from_path(self, path):
         filename = os.path.basename(path)
         return int(filename.split('_')[2])
 
