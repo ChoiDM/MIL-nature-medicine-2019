@@ -169,16 +169,16 @@ class MILdataset(data.Dataset):
 
         #Flatten grid
         patch_paths = []
-        slidenames = []
+        slideIDX = []
         targets = []
         for i, patch_path in enumerate(glob(os.path.join(args.dataroot, 'train' if is_Train else 'val', '*', '*.png'))):
             patch_paths.append(patch_path)
-            slidenames.append(self.get_slide_name_from_path(patch_path))
+            slideIDX.append(self.get_slide_idx_from_path(patch_path))
             targets.append(int(patch_path.split(os.sep)[-2]))
 
         print('Number of patches: {}'.format(len(patch_paths)))
 
-        self.slidenames = slidenames
+        self.slideIDX = slideIDX
         self.targets = targets
         self.patch_paths = patch_paths
 
@@ -189,20 +189,20 @@ class MILdataset(data.Dataset):
 
     def get_slide_name_from_path(self, path):
         filename = os.path.basename(path)
-        return '_'.join(filename.split('_')[:3])
+        return int(filename.split('_')[2])
 
     def setmode(self,mode):
         self.mode = mode
 
     def maketraindata(self, idxs):
-        self.t_data = [(self.slidenames[x],self.patch_paths[x],self.targets[x]) for x in idxs]
+        self.t_data = [(self.slideIDX[x],self.patch_paths[x],self.targets[x]) for x in idxs]
 
     def shuffletraindata(self):
         self.t_data = random.sample(self.t_data, len(self.t_data))
 
     def __getitem__(self,index):
         if self.mode == 1:
-            slidename = self.slidenames[index]
+            slideIDX = self.slideIDX[index]
             patch_path = self.patch_paths[index]
             img = cv2.imread(patch_path)
             img = cv2.resize(img, (self.size, self.size))
@@ -213,7 +213,7 @@ class MILdataset(data.Dataset):
             return img
 
         elif self.mode == 2:
-            slidename, patch_path, target = self.t_data[index]
+            slideIDX, patch_path, target = self.t_data[index]
             img = cv2.imread(patch_path)
             img = cv2.resize(img, (self.size, self.size))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
