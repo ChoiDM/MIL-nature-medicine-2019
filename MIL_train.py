@@ -1,9 +1,11 @@
-import sys
 import os
-import numpy as np
-import argparse
+import cv2
+import sys
 import random
+import argparse
 import openslide
+import numpy as np
+from glob import glob
 import PIL.Image as Image
 import torch
 import torch.nn as nn
@@ -15,10 +17,11 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 
 parser = argparse.ArgumentParser(description='MIL-nature-medicine-2019 tile classifier training script')
-parser.add_argument('--train_lib', type=str, default='', help='path to train MIL library binary')
+parser.add_argument('--dataroot', type=str, default='/data/crc_orig/paip2020_new/patch/MSI_classification_patch_level1', help='abnormal patch directory')
 parser.add_argument('--val_lib', type=str, default='', help='path to validation MIL library binary. If present.')
 parser.add_argument('--output', type=str, default='.', help='name of output file')
 parser.add_argument('--batch_size', type=int, default=512, help='mini-batch size (default: 512)')
+parser.add_argument('--input_size', type=int, default=224, help='image input size (default: 224)')
 parser.add_argument('--nepochs', type=int, default=100, help='number of epochs')
 parser.add_argument('--workers', default=4, type=int, help='number of data loading workers (default: 4)')
 parser.add_argument('--test_every', default=10, type=int, help='test on val every (default: 10)')
@@ -49,13 +52,13 @@ def main():
     trans = transforms.Compose([transforms.ToTensor(), normalize])
 
     #load data
-    train_dset = MILdataset(args.train_lib, trans)
+    train_dset = MILdataset(args, is_Train=True, transform=trans)
     train_loader = torch.utils.data.DataLoader(
         train_dset,
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=False)
     if args.val_lib:
-        val_dset = MILdataset(args.val_lib, trans)
+        val_dset = MILdataset(args, is_Train=False, transform=trans)
         val_loader = torch.utils.data.DataLoader(
             val_dset,
             batch_size=args.batch_size, shuffle=False,
@@ -161,59 +164,68 @@ def group_max(groups, data, nmax):
     return out
 
 class MILdataset(data.Dataset):
-    def __init__(self, libraryfile='', transform=None):
-        lib = torch.load(libraryfile)
-        slides = []
-        for i,name in enumerate(lib['slides']):
-            sys.stdout.write('Opening SVS headers: [{}/{}]\r'.format(i+1, len(lib['slides'])))
-            sys.stdout.flush()
-            slides.append(openslide.OpenSlide(name))
-        print('')
-        #Flatten grid
-        grid = []
-        slideIDX = []
-        for i,g in enumerate(lib['grid']):
-            grid.extend(g)
-            slideIDX.extend([i]*len(g))
+    def __init__(self, args, is_Train, transform=None):
+        self.dataroot = args.dataroot
+        self.is_Train = is_Train
 
-        print('Number of tiles: {}'.format(len(grid)))
-        self.slidenames = lib['slides']
-        self.slides = slides
-        self.targets = lib['targets']
-        self.grid = grid
-        self.slideIDX = slideIDX
+        #Flatten grid
+        patch_paths = []
+        slidenames = []
+        targets = []
+        for i, patch_path in enumerate(glob(os.path.join(args.dataroot, 'train' if is_Train else 'val', '*', '*.png'))):
+            patch_paths.append(patch_path)
+            slidenames.append(self.get_slide_name_from_path(patch_path))
+            targets.append(int(patch_path.split(os.sep)[-2]))
+
+        print('Number of patches: {}'.format(len(patch_paths)))
+
+        self.slidenames = slidenames
+        self.targets = targets
+        self.patch_paths = patch_paths
+
         self.transform = transform
         self.mode = None
-        self.mult = lib['mult']
-        self.size = int(np.round(224*lib['mult']))
-        self.level = lib['level']
+
+        self.size = args.input_size
+
+    def get_slide_name_from_path(self, path):
+        filename = os.path.basename(path)
+        return '_'.join(filename.split('_')[:3])
+
     def setmode(self,mode):
         self.mode = mode
+
     def maketraindata(self, idxs):
-        self.t_data = [(self.slideIDX[x],self.grid[x],self.targets[self.slideIDX[x]]) for x in idxs]
+        self.t_data = [(self.slidenames[x],self.patch_paths[x],self.targets[x]) for x in idxs]
+
     def shuffletraindata(self):
         self.t_data = random.sample(self.t_data, len(self.t_data))
+
     def __getitem__(self,index):
         if self.mode == 1:
-            slideIDX = self.slideIDX[index]
-            coord = self.grid[index]
-            img = self.slides[slideIDX].read_region(coord,self.level,(self.size,self.size)).convert('RGB')
-            if self.mult != 1:
-                img = img.resize((224,224),Image.BILINEAR)
+            slidename = self.slidenames[index]
+            patch_path = self.patch_paths[index]
+            img = cv2.imread(patch_path)
+            img = cv2.resize(img, (self.size, self.size))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
             if self.transform is not None:
                 img = self.transform(img)
             return img
+
         elif self.mode == 2:
-            slideIDX, coord, target = self.t_data[index]
-            img = self.slides[slideIDX].read_region(coord,self.level,(self.size,self.size)).convert('RGB')
-            if self.mult != 1:
-                img = img.resize((224,224),Image.BILINEAR)
+            slidename, patch_path, target = self.t_data[index]
+            img = cv2.imread(patch_path)
+            img = cv2.resize(img, (self.size, self.size))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
             if self.transform is not None:
                 img = self.transform(img)
             return img, target
+
     def __len__(self):
         if self.mode == 1:
-            return len(self.grid)
+            return len(self.patch_paths)
         elif self.mode == 2:
             return len(self.t_data)
 
