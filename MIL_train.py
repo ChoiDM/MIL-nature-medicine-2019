@@ -56,12 +56,12 @@ def main():
         train_dset,
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=False)
-    if args.val_lib:
-        val_dset = MILdataset(args, is_Train=False, transform=trans)
-        val_loader = torch.utils.data.DataLoader(
-            val_dset,
-            batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=False)
+        
+    val_dset = MILdataset(args, is_Train=False, transform=trans)
+    val_loader = torch.utils.data.DataLoader(
+        val_dset,
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=False)
 
     #open output file
     fconv = open(os.path.join(args.output,'convergence.csv'), 'w')
