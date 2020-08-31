@@ -18,12 +18,11 @@ import torchvision.models as models
 
 parser = argparse.ArgumentParser(description='MIL-nature-medicine-2019 tile classifier training script')
 parser.add_argument('--dataroot', type=str, default='/data/crc_orig/paip2020_new/patch/MSI_classification_patch_level1', help='abnormal patch directory')
-parser.add_argument('--val_lib', type=str, default='', help='path to validation MIL library binary. If present.')
 parser.add_argument('--output', type=str, default='.', help='name of output file')
 parser.add_argument('--batch_size', type=int, default=512, help='mini-batch size (default: 512)')
 parser.add_argument('--input_size', type=int, default=224, help='image input size (default: 224)')
 parser.add_argument('--nepochs', type=int, default=100, help='number of epochs')
-parser.add_argument('--workers', default=4, type=int, help='number of data loading workers (default: 4)')
+parser.add_argument('--workers', default=10, type=int, help='number of data loading workers (default: 4)')
 parser.add_argument('--test_every', default=10, type=int, help='test on val every (default: 10)')
 parser.add_argument('--weights', default=0.5, type=float, help='unbalanced positive class weight (default: 0.5, balanced classes)')
 parser.add_argument('--k', default=1, type=int, help='top k tiles are assumed to be of the same class as the slide (default: 1, standard MIL)')
