@@ -19,14 +19,12 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 
 ##############################################################
-# | Input size |  LR  | class weights | batch_size | GPU |  |
-# |------------|------|---------------|------------|-----|--|
-# |   512x512  | 1e-4 |   0.3 : 0.7   |     128    |  0  | O
-# |   512x512  | 5e-4 |   0.3 : 0.7   |     128    |  1  | O
-# |   512x512  | 1e-3 |   0.3 : 0.7   |     128    |  2  | X
-# |   512x512  | 1e-4 |   0.25:0.75   |     128    |  0  | 0
-# |   512x512  | 5e-4 |   0.25:0.75   |     128    |  1  | 0
-# |   512x512  | 1e-3 |   0.25:0.75   |     128    |  2  | X
+# | Top-k |  LR  | class weights | batch_size | input_size | #
+# |-------|------|---------------|------------|------------| #
+# |   1   | 1e-4 |   0.25:0.75   |     64     |   512x512  | #
+# |   3   | 1e-4 |   0.25:0.75   |     64     |   512x512  | #
+# |   5   | 1e-4 |   0.25:0.75   |     32     |   512x512  | #
+# |   7   | 1e-4 |   0.25:0.75   |     16     |   512x512  | #
 ##############################################################
 
 parser = argparse.ArgumentParser(description='MIL-nature-medicine-2019 tile classifier training script')
@@ -251,10 +249,11 @@ class MILTraindataset(data.Dataset):
         print("Generating Train Dataset...")
         img_list = sorted(glob(os.path.join(args.train_dir, '*', '*.png')))
         for patch_path in tqdm(img_list, desc='Training Dataset'):
-            slide_idx = self.get_slide_idx_from_path(patch_path)
-            include = args.overlap or (slide_idx%4 == 0)
+            h_idx, w_idx = map(int, patch_path.rstrip('.png').split('_')[-2:])
+            include = args.overlap or (h_idx%4==0 & w_idx%4==0)
 
             if include:
+                slide_idx = self.get_slide_idx_from_path(patch_path)
                 slideIDX.append(slide_idx)
                 patch_paths.append(patch_path)
                 targets.append(int(patch_path.split(os.sep)[-2]))
@@ -334,10 +333,11 @@ class MILValiddataset(data.Dataset):
         print("Generating Valid Dataset...")
         img_list = sorted(glob(os.path.join(args.valid_dir, '*', 'test', '*.png')))
         for patch_path in tqdm(img_list, desc='Validation Dataset'):
-            slide_idx = self.get_slide_idx_from_path(patch_path)
-            include = args.overlap or (slide_idx%4 == 0)
+            h_idx, w_idx = map(int, patch_path.rstrip('.png').split('_')[-2:])
+            include = args.overlap or (h_idx%4==0 & w_idx%4==0)
 
             if include:
+                slide_idx = self.get_slide_idx_from_path(patch_path)
                 slideIDX.append(slide_idx)
                 patch_paths.append(patch_path)
                 target = self.label_dict[patch_path.split(os.sep)[-3]]
