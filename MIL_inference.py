@@ -2,6 +2,7 @@ import sys
 import os
 import cv2
 import numpy as np
+from tqdm import tqdm
 import argparse
 import random
 import openslide
@@ -17,11 +18,11 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 
 parser = argparse.ArgumentParser(description='')
-parser.add_argument('--dataroot', type=str, default='/data/crc_orig/paip2020_new/patch/MSI_classification_patch_level1', help='abnormal patch directory')
+parser.add_argument('--dataroot', type=str, default='/data/crc_orig/paip2020_new/patch/test_MSI_CNN_input_patch', help='abnormal patch directory')
 parser.add_argument('--output', type=str, default='.', help='name of output directory')
 parser.add_argument('--input_size', type=int, default=512, help='image input size (default: 224)')
 parser.add_argument('--model', type=str, default='', help='path to pretrained model')
-parser.add_argument('--batch_size', type=int, default=128, help='how many images to sample per slide (default: 100)')
+parser.add_argument('--batch_size', type=int, default=256, help='how many images to sample per slide (default: 100)')
 parser.add_argument('--workers', default=10, type=int, help='number of data loading workers (default: 4)')
 
 def main():
@@ -50,40 +51,29 @@ def main():
 
     dset.setmode(1)
     probs = inference(loader, model)
-    # maxs = group_max(np.array(dset.slideIDX), probs, len(dset.targets))
-    slide_idcs, max_probs, _, targets = group_max(np.array(dset.slideIDX), probs, np.array(dset.targets))
+    slide_idcs, max_probs = group_max(np.array(dset.slideIDX), probs)
 
     fp = open(os.path.join(args.output, 'predictions.csv'), 'w')
-    fp.write('file,target,prediction,probability\n')
-    for name, target, prob in zip(slide_idcs, targets, max_probs):
-        fp.write('{},{},{},{}\n'.format(name, target, int(prob>=0.5), prob))
+    fp.write('file,prediction,probability\n')
+    for name, prob in zip(slide_idcs, max_probs):
+        fp.write('{},{},{}\n'.format(name, int(prob>=0.5), prob))
     fp.close()
 
 def inference(loader, model):
     model.eval()
     probs = torch.FloatTensor(len(loader.dataset))
     with torch.no_grad():
-        for i, input in enumerate(loader):
-            print('Batch: [{}/{}]'.format(i+1, len(loader)))
+        i = 0
+        for input in tqdm(loader):
+            # print('Batch: [{}/{}]'.format(i+1, len(loader)))
             input = input.cuda().float()
             output = F.softmax(model(input), dim=1)
             probs[i*args.batch_size:i*args.batch_size+input.size(0)] = output.detach()[:,1].clone()
+            i += 1
     return probs.cpu().numpy()
 
-# def group_max(groups, data, nmax):
-#     out = np.empty(nmax)
-#     out[:] = np.nan
-#     order = np.lexsort((data, groups))
-#     groups = groups[order]
-#     data = data[order]
-#     index = np.empty(len(groups), 'bool')
-#     index[-1] = True
-#     index[:-1] = groups[1:] != groups[:-1]
-#     out[groups[index]] = data[index]
-#     return list(out)
-
-def group_max(groups, data, targets):
-    nmax = len(targets)
+def group_max(groups, data):
+    nmax = len(data)
     out = np.empty(nmax)
     out[:] = np.nan
     order = np.lexsort((data, groups))
@@ -94,9 +84,8 @@ def group_max(groups, data, targets):
     index[:-1] = groups[1:] != groups[:-1]
     out[groups[index]] = data[index]
     out = out[~np.isnan(out)]
-    targets = targets.copy()[order][index]
-    out_bi = (out > 0.5).astype(np.uint8)
-    return groups[index], out, out_bi, targets
+    # out_bi = (out > 0.5).astype(np.uint8)
+    return groups[index], out
 
 class MILdataset(data.Dataset):
     def __init__(self, args, is_Train, transform=None):
@@ -106,18 +95,15 @@ class MILdataset(data.Dataset):
         #Flatten grid
         patch_paths = []
         slideIDX = []
-        targets = []
 
-        img_list = sorted(glob(os.path.join(args.dataroot, 'train' if is_Train else 'val', '*', '*.png')))
+        img_list = sorted(glob(os.path.join(args.dataroot, '*', 'test', '*.png')))
         for i, patch_path in enumerate(img_list):
             patch_paths.append(patch_path)
             slideIDX.append(self.get_slide_idx_from_path(patch_path))
-            targets.append(int(patch_path.split(os.sep)[-2]))
 
         print('Number of patches: {}'.format(len(patch_paths)))
 
         self.slideIDX = slideIDX
-        self.targets = targets
         self.patch_paths = patch_paths
 
         self.transform = transform
@@ -134,12 +120,6 @@ class MILdataset(data.Dataset):
 
     def setmode(self,mode):
         self.mode = mode
-
-    def maketraindata(self, idxs):
-        self.t_data = [(self.slideIDX[x],self.patch_paths[x],self.targets[x]) for x in idxs]
-
-    def shuffletraindata(self):
-        self.t_data = random.sample(self.t_data, len(self.t_data))
 
     def __getitem__(self,index):
         if self.mode == 1:
